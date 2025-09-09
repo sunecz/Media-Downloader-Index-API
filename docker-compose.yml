@@ -1,0 +1,20 @@
+services:
+  mdi-api:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_DATABASE_URL: ${APP_DATABASE_URL}
+      APP_API_TITLE: ${APP_API_TITLE}
+      APP_API_VERSION: ${APP_API_VERSION}
+      APP_API_DESCRIPTION: ${APP_API_DESCRIPTION}
+      APP_BASE_PATH: ${APP_BASE_PATH}
+    ports:
+      - "127.0.0.1:${APP_PORT}:8000"
+    networks:
+      - net-mdi
+    mem_limit: 512m
+    mem_reservation: 400m
+
+networks:
+  net-mdi:
+    external: true

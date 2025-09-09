@@ -1,0 +1,8 @@
+{
+	"include": [
+		"app"
+	],
+	"typeCheckingMode": "standard",
+	"reportMissingTypeStubs": "none",
+	"reportPrivateImportUsage": "none"
+}
