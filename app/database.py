@@ -1,10 +1,19 @@
+from dataclasses import dataclass
 import logging
 from typing import Iterable
 from rdflib import Literal, URIRef
 from app.client import sparql_run_query
-from app.models import Program
+from app.models import CursorPaginationResult, Program, ProgramList
+from app.utils import encode_cursor
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProgramListPagination:
+    size: int
+    after_title: str | None = None
+    after_uri: str | None = None
 
 
 def sparql_literal(text: str, lang: str | None = None, datatype: str | None = None) -> str:
@@ -30,57 +39,100 @@ class DatabaseService:
     async def get_programs(
         self,
         source: str | None = None,
-        page: int | None = None,
-        size: int | None = None,
-    ) -> tuple[list[Program], int]:
-        query = self._build_programs_query(source, page, size)
+        pagination: ProgramListPagination | None = None,
+    ) -> ProgramList:
+        query = self._build_programs_query(source, pagination)
         results = await self._run_query(query)
 
         programs = self._parse_programs_results(results)
         total_count = len(programs)
 
-        if page is not None and size is not None:
+        size = total_count
+        next_cursor = None
+
+        if pagination is not None:
+            list_size = total_count
+            size = pagination.size
             total_count = await self._get_total_count(source)
 
-        return programs, total_count
+            if list_size > size:
+                programs = programs[:size]
+                last_program = programs[-1]
+                next_cursor = encode_cursor({
+                    "title": last_program.title,
+                    "uri": last_program.uri,
+                })
+
+        return ProgramList(
+            programs=programs,
+            total=total_count,
+            pagination=CursorPaginationResult(
+                size=size,
+                next_cursor=next_cursor,
+            )
+        )
 
     def _build_programs_query(
         self,
         source: str | None = None,
-        page: int | None = None,
-        size: int | None = None,
+        pagination: ProgramListPagination | None = None,
     ) -> str:
-        filters = []
+        paginate = ""
+        limit = ""
+        filters = ""
 
         if source:
-            filters.append(f"?uri mdip:source {sparql_literal(source)} .")
+            filters += f"""
+            ?uri mdip:source {sparql_literal(source)} .
+            """
 
-        query = f"""
+        if pagination is not None:
+            size = pagination.size
+            after_title = pagination.after_title
+            after_uri = pagination.after_uri
+
+            if after_title and after_uri:
+                lc_after_title = f"LCASE({sparql_literal(after_title)})"
+                l_after_uri = sparql_iri(after_uri)
+
+                # Performance note:
+                #   In Fuseki it seems to be better to not bind the LCASE
+                #   values using the BIND keyword, but rather keep repeating
+                #   the expression.
+                paginate = f"""
+                FILTER (
+                    (LCASE(?title) > {lc_after_title}) ||
+                    (LCASE(?title) = {lc_after_title} && ?uri > {l_after_uri})
+                )
+                """
+
+            # +1 to check if there are more items after the true limit
+            limit = f"LIMIT {size + 1}"
+
+        return f"""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX sch: <https://schema.org/>
         PREFIX mdip: <https://schema.mdi.sune.app/properties/>
         
         SELECT DISTINCT ?uri ?title ?type ?source
         WHERE {{
-            {"\n".join(filters)}
             ?uri mdip:source ?source ;
                  sch:name    ?title  ;
                  rdf:type    ?type   .
+            {filters}
+            {paginate}
         }}
-        ORDER BY LCASE(?title) ?title
+        ORDER BY LCASE(?title) ?uri
+        {limit}
         """
 
-        if page is not None and size is not None:
-            offset = (page - 1) * size
-            query += f"\nLIMIT {size}\nOFFSET {offset}"
-
-        return query
-
     async def _get_total_count(self, source: str | None = None) -> int:
-        filters = []
+        filters = ""
 
         if source:
-            filters.append(f"?uri mdip:source {sparql_literal(source)} .")
+            filters += f"""
+            ?uri mdip:source {sparql_literal(source)} .
+            """
 
         count_query = f"""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -89,9 +141,9 @@ class DatabaseService:
         
         SELECT (COUNT(DISTINCT ?uri) AS ?count)
         WHERE {{
-            {"\n".join(filters)}
             ?uri sch:name ?title ;
                  rdf:type ?type  .
+            {filters}
         }}
         """
 

@@ -3,11 +3,20 @@ from litestar.params import Parameter
 from msgspec import Struct, Meta
 
 
-class Pagination(Struct):
-    page: Annotated[int | None, Parameter(
-        description="Page number")] = None
-    size: Annotated[int | None, Parameter(
-        description="Page size")] = None
+class CursorPagination(Struct):
+    cursor: Annotated[str | None, Parameter(
+        description="Base64 encoded JSON cursor")] = None
+    size: Annotated[int | None, Parameter(description="Page size")] = None
+
+
+class DecodedCursorPagination(Struct):
+    cursor: Annotated[dict, Parameter(description="JSON cursor")]
+    size: Annotated[int, Parameter(description="Page size")]
+
+
+class CursorPaginationResult(Struct):
+    size: Annotated[int, Meta(description="Page size")]
+    next_cursor: Annotated[str | None, Meta(description="Next cursor")]
 
 
 class Program(Struct):
@@ -21,5 +30,5 @@ class Program(Struct):
 class ProgramList(Struct):
     programs: Annotated[list[Program], Meta(description="List of programs")]
     total: Annotated[int, Meta(description="Total number of programs")]
-    pagination: Annotated[Pagination, Meta(
-        description="Pagination parameters")]
+    pagination: Annotated[CursorPaginationResult, Meta(
+        description="Pagination result")]

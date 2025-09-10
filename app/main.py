@@ -9,7 +9,11 @@ from litestar.config.cors import CORSConfig
 from app.logging_config import LOGGING_CONFIG
 from app.config import config
 from app.controllers import ProgramsController, WebsitesController
-from app.dependencies import get_db_service, get_pagination
+from app.dependencies import (
+    get_db_service,
+    get_cursor_pagination,
+    get_decoded_cursor_pagination,
+)
 from app.client import start_client, stop_client
 
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -54,7 +58,8 @@ def create_app() -> Litestar:
         ],
         dependencies={
             "db_service": Provide(get_db_service),
-            "pagination": Provide(get_pagination),
+            "cursor_pagination": Provide(get_cursor_pagination),
+            "decoded_cursor_pagination": Provide(get_decoded_cursor_pagination),
         },
         on_startup=[start_client],
         on_shutdown=[stop_client],
