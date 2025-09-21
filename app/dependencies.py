@@ -1,13 +1,13 @@
 import binascii
 import msgspec
 from app.config import config
-from app.database import DatabaseService
+from app.services import ProgramsService
 from app.models import CursorPagination, DecodedCursorPagination
 from app.utils import decode_cursor
 
 
-async def get_db_service() -> DatabaseService:
-    return DatabaseService()
+async def get_programs_service() -> ProgramsService:
+    return ProgramsService()
 
 
 async def get_cursor_pagination(

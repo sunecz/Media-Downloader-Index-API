@@ -10,9 +10,9 @@ from app.logging_config import LOGGING_CONFIG
 from app.config import config
 from app.controllers import ProgramsController, WebsitesController
 from app.dependencies import (
-    get_db_service,
     get_cursor_pagination,
     get_decoded_cursor_pagination,
+    get_programs_service,
 )
 from app.client import start_client, stop_client
 
@@ -57,7 +57,7 @@ def create_app() -> Litestar:
             WebsitesController,
         ],
         dependencies={
-            "db_service": Provide(get_db_service),
+            "programs_service": Provide(get_programs_service),
             "cursor_pagination": Provide(get_cursor_pagination),
             "decoded_cursor_pagination": Provide(get_decoded_cursor_pagination),
         },

@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 import logging
 from typing import Iterable
-from rdflib import Literal, URIRef
-from app.client import sparql_run_query
+from app.client import sparql_literal, sparql_query_get_value, sparql_query_results
 from app.models import CursorPaginationResult, Program, ProgramList
-from app.utils import encode_cursor
+from app.utils import encode_cursor, normalize_str
 
 logger = logging.getLogger(__name__)
 
@@ -16,63 +15,9 @@ class ProgramListPagination:
     after_uri: str | None = None
 
 
-def sparql_literal(text: str, lang: str | None = None, datatype: str | None = None) -> str:
-    return Literal(text, lang=lang, datatype=datatype).n3()
+class ProgramsService:
 
-
-def sparql_iri(iri: str) -> str:
-    return URIRef(iri).n3()
-
-
-class DatabaseService:
-
-    async def _run_query(self, query: str) -> Iterable[dict]:
-        data = await sparql_run_query(query)
-        head = data.get("head", {}).get("vars", [])
-        rows = data.get("results", {}).get("bindings", [])
-
-        return (
-            {v: cell.get("value", "") for v, cell in row.items() if v in head}
-            for row in rows
-        )
-
-    async def get_programs(
-        self,
-        source: str | None = None,
-        pagination: ProgramListPagination | None = None,
-    ) -> ProgramList:
-        query = self._build_programs_query(source, pagination)
-        results = await self._run_query(query)
-
-        programs = self._parse_programs_results(results)
-        total_count = len(programs)
-
-        size = total_count
-        next_cursor = None
-
-        if pagination is not None:
-            list_size = total_count
-            size = pagination.size
-            total_count = await self._get_total_count(source)
-
-            if list_size > size:
-                programs = programs[:size]
-                last_program = programs[-1]
-                next_cursor = encode_cursor({
-                    "title": last_program.title,
-                    "uri": last_program.uri,
-                })
-
-        return ProgramList(
-            programs=programs,
-            total=total_count,
-            pagination=CursorPaginationResult(
-                size=size,
-                next_cursor=next_cursor,
-            )
-        )
-
-    def _build_programs_query(
+    def _query_get_programs(
         self,
         source: str | None = None,
         pagination: ProgramListPagination | None = None,
@@ -93,7 +38,7 @@ class DatabaseService:
 
             if after_title and after_uri:
                 lc_after_title = f"LCASE({sparql_literal(after_title)})"
-                l_after_uri = sparql_iri(after_uri)
+                l_after_uri = sparql_literal(after_uri)
 
                 # Performance note:
                 #   In Fuseki it seems to be better to not bind the LCASE
@@ -102,7 +47,7 @@ class DatabaseService:
                 paginate = f"""
                 FILTER (
                     (LCASE(?title) > {lc_after_title}) ||
-                    (LCASE(?title) = {lc_after_title} && ?uri > {l_after_uri})
+                    (LCASE(?title) = {lc_after_title} && STR(?uri) > {l_after_uri})
                 )
                 """
 
@@ -122,11 +67,11 @@ class DatabaseService:
             {filters}
             {paginate}
         }}
-        ORDER BY LCASE(?title) ?uri
+        ORDER BY LCASE(?title) STR(?uri)
         {limit}
         """
 
-    async def _get_total_count(self, source: str | None = None) -> int:
+    async def _query_get_programs_total(self, source: str | None = None) -> int:
         filters = ""
 
         if source:
@@ -147,13 +92,7 @@ class DatabaseService:
         }}
         """
 
-        result = await self._run_query(count_query)
-
-        try:
-            first_row = next(iter(result))
-            return int(first_row.get('count', 0))
-        except (StopIteration, IndexError, ValueError):
-            return 0
+        return int(await sparql_query_get_value(count_query, 'count', 0))
 
     def _program_type(self, db_type: str) -> str:
         match db_type:
@@ -174,3 +113,39 @@ class DatabaseService:
             )
             for row in results
         ]
+
+    async def get_programs(
+        self,
+        source: str | None = None,
+        pagination: ProgramListPagination | None = None,
+    ) -> ProgramList:
+        query = self._query_get_programs(source, pagination)
+        results = await sparql_query_results(query)
+
+        programs = self._parse_programs_results(results)
+        total_count = len(programs)
+
+        size = total_count
+        next_cursor = None
+
+        if pagination is not None:
+            list_size = total_count
+            size = pagination.size
+            total_count = await self._query_get_programs_total(source)
+
+            if list_size > size:
+                programs = programs[:size]
+                last_program = programs[-1]
+                next_cursor = encode_cursor({
+                    "title": normalize_str(last_program.title),
+                    "uri": last_program.uri,
+                })
+
+        return ProgramList(
+            programs=programs,
+            total=total_count,
+            pagination=CursorPaginationResult(
+                size=size,
+                next_cursor=next_cursor,
+            )
+        )
