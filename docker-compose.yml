@@ -8,6 +8,15 @@ services:
       APP_API_VERSION: ${APP_API_VERSION}
       APP_API_DESCRIPTION: ${APP_API_DESCRIPTION}
       APP_BASE_PATH: ${APP_BASE_PATH}
+      APP_DEFAULT_PAGE_SIZE: ${APP_DEFAULT_PAGE_SIZE}
+      APP_MAX_PAGE_SIZE: ${APP_MAX_PAGE_SIZE}
+      APP_CACHE_DIR: ${APP_CACHE_DIR}
+      APP_CACHE_HOT_MAX_SIZE: ${APP_CACHE_HOT_MAX_SIZE}
+      APP_CACHE_DISK_MAX_SIZE: ${APP_CACHE_DISK_MAX_SIZE}
+      APP_CACHE_FILE_MAX_SIZE: ${APP_CACHE_FILE_MAX_SIZE}
+      APP_CACHE_MAX_CONCURRENCY: ${APP_CACHE_MAX_CONCURRENCY}
+    volumes:
+      - vol-mdi-cache:/cache
     ports:
       - "127.0.0.1:${APP_PORT}:8000"
     networks:
@@ -18,3 +27,7 @@ services:
 networks:
   net-mdi:
     external: true
+
+volumes:
+  vol-mdi-cache:
+    driver: local
