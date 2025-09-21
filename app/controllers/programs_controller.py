@@ -5,6 +5,7 @@ from litestar.status_codes import HTTP_500_INTERNAL_SERVER_ERROR
 from app.models import ProgramList, DecodedCursorPagination
 from app.services import ProgramsService
 from app.services.programs_service import ProgramListPagination
+from app.cache import CacheMiddleware
 from app.utils import normalize_str
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ class ProgramsController(Controller):
         path="/",
         description="Get all programs",
         summary="Get all programs",
+        middleware=[CacheMiddleware()],
     )
     async def get_programs(
         self,

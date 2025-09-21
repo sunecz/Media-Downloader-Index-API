@@ -2,6 +2,7 @@ import logging
 from litestar import Controller, get
 from litestar.exceptions import HTTPException
 from litestar.status_codes import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
+from app.cache import CacheMiddleware
 from app.models import ProgramList, DecodedCursorPagination
 from app.services import ProgramsService
 from app.services.programs_service import ProgramListPagination
@@ -30,6 +31,7 @@ class WebsitesController(Controller):
         path="/{website:str}/programs",
         description="Get programs by website",
         summary="Get programs by website",
+        middleware=[CacheMiddleware()],
     )
     async def get_programs_by_website(
         self,

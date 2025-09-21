@@ -17,6 +17,15 @@ validators.register(Validator("api_description", cast=str, must_exist=True))
 validators.register(Validator("base_path", cast=str, must_exist=True))
 validators.register(Validator("default_page_size", cast=int, default=10))
 validators.register(Validator("max_page_size", cast=int, default=100))
+validators.register(Validator("cache_dir", cast=str, must_exist=True))
+validators.register(Validator("cache_hot_max_size", cast=int, default=1000))
+validators.register(
+    Validator("cache_disk_max_size", cast=int, default=10 * 1024 * 1024 * 1024)
+)
+validators.register(
+    Validator("cache_file_max_size", cast=int, default=50 * 1024 * 1024)
+)
+validators.register(Validator("cache_max_concurrency", cast=int, default=8))
 validators.validate()
 
 
@@ -29,6 +38,11 @@ class Config:
     base_path: str
     default_page_size: int
     max_page_size: int
+    cache_dir: str
+    cache_hot_max_size: int
+    cache_disk_max_size: int
+    cache_file_max_size: int
+    cache_max_concurrency: int
 
 
 config = cast(Config, _dynaconf)
