@@ -51,6 +51,8 @@ The on-disk cache is safe to use with multiple workers (e.g. `granian --workers 
 - `locks/` holds per-key locks, so that a response being computed by one worker is awaited, not computed again, by the others,
 - `data/<version>/` holds the entries, the directory of an older version is removed when the version changes.
 
+Always run granian with `--respawn-failed-workers` (the Dockerfile does). Without it, granian shuts down entirely when any worker dies, whatever the number of workers.
+
 Entries are written by a background thread. Eviction scans the cache only when it exceeds `APP_CACHE_DISK_MAX_SIZE`, and then removes the oldest entries down to `APP_CACHE_DISK_EVICT_TARGET` of it.
 
 ## API docs

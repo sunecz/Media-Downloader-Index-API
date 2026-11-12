@@ -20,4 +20,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run the application
-CMD ["granian", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "app/main:app"] 
+CMD ["granian", "--interface", "asgi", "--respawn-failed-workers", "--host", "0.0.0.0", "--port", "8000", "app/main:app"]
