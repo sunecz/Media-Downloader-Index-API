@@ -29,7 +29,8 @@ The script requires a `.envrc` file with the following environment variables:
 	export APP_CACHE_HOT_MAX_SIZE=1000         # Maximum number of entries that may be stored in the hot (in-memory) cache
 	export APP_CACHE_DISK_MAX_SIZE=10737418240 # Maximum total size of on-disk cache
 	export APP_CACHE_FILE_MAX_SIZE=52428800    # Maximum file size in the on-disk cache
-	export APP_CACHE_MAX_CONCURRENCY=8         # Maximum number of concurrent write async operations
+	export APP_CACHE_MAX_CONCURRENCY=8         # Maximum number of concurrent uncached computations per worker
+	export APP_CACHE_DISK_EVICT_TARGET=0.7     # Optional: when the on-disk cache exceeds its maximum size, the oldest entries are removed down to this fraction of it (default 0.7)
 
 	export APP_PORT=20000                      # Application local port
 
@@ -41,6 +42,16 @@ You can run the script as follows:
 where:
 - `COMMAND` is one of: `start`, `stop`.
 - `ARGS` are optional args passed to the `docker compose` command, e.g. `--build`.
+
+## Cache
+Responses are cached in memory (per worker) and on disk in `APP_CACHE_DIR` (shared by all workers). Both are invalidated whenever the indexer bumps the dataset version.
+
+The on-disk cache is safe to use with multiple workers (e.g. `granian --workers N`). The workers coordinate through a small state file and `flock` locks in the cache directory, so it must be on a local volume, not a network filesystem:
+- `.state` holds the current dataset version and the total size of the cache,
+- `locks/` holds per-key locks, so that a response being computed by one worker is awaited, not computed again, by the others,
+- `data/<version>/` holds the entries, the directory of an older version is removed when the version changes.
+
+Entries are written by a background thread. Eviction scans the cache only when it exceeds `APP_CACHE_DISK_MAX_SIZE`, and then removes the oldest entries down to `APP_CACHE_DISK_EVICT_TARGET` of it.
 
 ## API docs
 The application exposes Swagger UI docs for the REST API. By default it is available at `/docs`.

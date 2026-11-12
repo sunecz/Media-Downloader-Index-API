@@ -16,6 +16,7 @@ from app.dependencies import (
     get_sources_service,
 )
 from app.db import get_db_connection, start_db, stop_db
+from app.cache import start_cache, stop_cache
 
 logging.config.dictConfig(LOGGING_CONFIG)
 
@@ -64,8 +65,8 @@ def create_app() -> Litestar:
             "cursor_pagination": Provide(get_cursor_pagination),
             "decoded_cursor_pagination": Provide(get_decoded_cursor_pagination),
         },
-        on_startup=[start_db],
-        on_shutdown=[stop_db],
+        on_startup=[start_db, start_cache],
+        on_shutdown=[stop_cache, stop_db],
     )
 
 

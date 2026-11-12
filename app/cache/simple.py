@@ -28,7 +28,16 @@ _cache_disk = DiskCache(
     max_concurrency=config.cache_max_concurrency,
     disk_max_size=config.cache_disk_max_size,
     file_max_size=config.cache_file_max_size,
+    evict_target=config.cache_disk_evict_target,
 )
+
+
+async def start_cache() -> None:
+    await asyncio.to_thread(_cache_disk.start)
+
+
+async def stop_cache() -> None:
+    await asyncio.to_thread(_cache_disk.stop)
 
 
 def _version_is_higher(new: int | None, cur: int | None) -> bool:
@@ -41,15 +50,24 @@ def _set_version(new: int | None) -> None:
 
 
 async def _ensure_cache_version(incoming: int | None) -> None:
+    if not _version_is_higher(incoming, _version):
+        return  # Fast path, no locking or IO
+
     async with _version_lock:
-        if _version_is_higher(incoming, _version):
-            await _clear_all_caches()
-            _set_version(incoming)
+        if not _version_is_higher(incoming, _version):
+            return
 
+        # Memory caches are per process, the disk cache is shared and only
+        # the first process to see the new version switches it.
+        await _cache_lru.clear()
+        await _cache_disk.clear_inflight()
 
-async def _clear_all_caches() -> None:
-    await _cache_lru.clear()
-    await _cache_disk.clear()
+        if await asyncio.to_thread(_cache_disk.ensure_version, incoming):
+            logger.info("Disk cache switched to version %s", incoming)
+
+        # Set only after the disk switch, so that no entry of the new version
+        # is written before it
+        _set_version(incoming)
 
 
 def _normalize_uri(uri: str) -> str:
@@ -78,18 +96,22 @@ async def _get_data(
     if (data := await _cache_lru.get(key)) is not None:
         return data
 
-    if (data := _cache_disk.read_data(key)) is not None:
+    if (data := await _cache_disk.read(version, key)) is not None:
         await _cache_lru.set(key, data)
         return data
 
     async with _cache_disk.new_coalesced_access(key) as access:
         if access.is_acquired():
+            data = None
+
             try:
-                with access.new_file_access(key) as file:
-                    if (data := file.get_data()) is None:
+                # Another worker may be computing the same entry, wait for it
+                async with _cache_disk.key_lock(key) as lock:
+                    if (data := await _cache_disk.read(version, key)) is None:
                         # None = do not cache
                         if (data := await fn(uri)) is not None:
-                            file.set_data(data)
+                            # The writer releases the lock once the entry is on disk
+                            _cache_disk.enqueue(version, key, data, lock.detach())
 
                 if data is not None:
                     await _cache_lru.set(key, data)

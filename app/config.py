@@ -28,6 +28,9 @@ validators.register(
     Validator("cache_file_max_size", cast=int, default=50 * 1024 * 1024)
 )
 validators.register(Validator("cache_max_concurrency", cast=int, default=8))
+validators.register(
+    Validator("cache_disk_evict_target", cast=float, default=0.7, gt=0, lt=1)
+)
 validators.validate()
 
 
@@ -47,6 +50,7 @@ class Config:
     cache_disk_max_size: int
     cache_file_max_size: int
     cache_max_concurrency: int
+    cache_disk_evict_target: float
 
 
 config = cast(Config, _dynaconf)
