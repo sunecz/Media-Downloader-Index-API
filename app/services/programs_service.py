@@ -1,9 +1,15 @@
 from dataclasses import dataclass
 import logging
-from typing import Iterable
-from app.client import sparql_literal, sparql_query_get_value, sparql_query_results
-from app.models import CursorPaginationResult, Program, ProgramList
-from app.utils import encode_cursor, normalize_str
+from sqlalchemy import Select, Text, bindparam, func, select, tuple_
+from sqlalchemy.ext.asyncio import AsyncConnection
+from app.db.models import Program, Source
+from app.models import (
+    CursorPaginationResult,
+    Program as ProgramModel,
+    ProgramCursor,
+    ProgramList,
+)
+from app.utils import encode_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -11,135 +17,88 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ProgramListPagination:
     size: int
-    after_title: str | None = None
-    after_uri: str | None = None
+    after: ProgramCursor | None = None
+
+
+# Titled only, pagination orders by title
+_listed = (Program.active.is_(True), Program.title.is_not(None))
 
 
 class ProgramsService:
 
     def _query_get_programs(
         self,
-        source: str | None = None,
-        pagination: ProgramListPagination | None = None,
-    ) -> str:
-        paginate = ""
-        limit = ""
-        filters = ""
+        source_id: int | None,
+        pagination: ProgramListPagination | None,
+    ) -> Select:
+        # Plain columns match the title indexes; lower()/COLLATE would not
+        query = (
+            select(Program.uri, Program.title, Program.type, Source.name)
+            .join(Source, Source.id == Program.source_id)
+            .where(*_listed)
+            .order_by(Program.title, Program.uri)
+        )
 
-        if source:
-            filters += f"""
-            ?uri mdip:source {sparql_literal(source)} .
-            """
+        if source_id is not None:
+            query = query.where(Program.source_id == source_id)
 
         if pagination is not None:
-            size = pagination.size
-            after_title = pagination.after_title
-            after_uri = pagination.after_uri
-
-            if after_title and after_uri:
-                lc_after_title = f"LCASE({sparql_literal(after_title)})"
-                l_after_uri = sparql_literal(after_uri)
-
-                # Performance note:
-                #   In Fuseki it seems to be better to not bind the LCASE
-                #   values using the BIND keyword, but rather keep repeating
-                #   the expression.
-                paginate = f"""
-                FILTER (
-                    (LCASE(?title) > {lc_after_title}) ||
-                    (LCASE(?title) = {lc_after_title} && STR(?uri) > {l_after_uri})
+            if (after := pagination.after) is not None:
+                query = query.where(
+                    tuple_(Program.title, Program.uri) > tuple_(
+                        bindparam("after_title", after.title, Text),
+                        bindparam("after_uri", after.uri, Text),
+                    )
                 )
-                """
 
             # +1 to check if there are more items after the true limit
-            limit = f"LIMIT {size + 1}"
+            query = query.limit(pagination.size + 1)
 
-        return f"""
-        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-        PREFIX sch: <https://schema.org/>
-        PREFIX mdip: <https://schema.mdi.sune.app/properties/>
-        
-        SELECT DISTINCT ?uri ?title ?type ?source
-        WHERE {{
-            ?uri mdip:source ?source ;
-                 sch:name    ?title  ;
-                 rdf:type    ?type   .
-            {filters}
-            {paginate}
-        }}
-        ORDER BY LCASE(?title) STR(?uri)
-        {limit}
-        """
+        return query
 
-    async def _query_get_programs_total(self, source: str | None = None) -> int:
-        filters = ""
+    async def _get_programs_total(
+        self,
+        conn: AsyncConnection,
+        source_id: int | None,
+    ) -> int:
+        query = select(func.count()).select_from(Program).where(*_listed)
 
-        if source:
-            filters += f"""
-            ?uri mdip:source {sparql_literal(source)} .
-            """
+        if source_id is not None:
+            query = query.where(Program.source_id == source_id)
 
-        count_query = f"""
-        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-        PREFIX sch: <https://schema.org/>
-        PREFIX mdip: <https://schema.mdi.sune.app/properties/>
-        
-        SELECT (COUNT(DISTINCT ?uri) AS ?count)
-        WHERE {{
-            ?uri sch:name ?title ;
-                 rdf:type ?type  .
-            {filters}
-        }}
-        """
-
-        return int(await sparql_query_get_value(count_query, 'count', 0))
-
-    def _program_type(self, db_type: str) -> str:
-        match db_type:
-            case "https://schema.org/Movie":
-                return "movie"
-            case "https://schema.org/TVSeries":
-                return "tv_series"
-            case _:
-                return "unknown"
-
-    def _parse_programs_results(self, results: Iterable[dict]) -> list[Program]:
-        return [
-            Program(
-                source=row.get("source", ""),
-                uri=row.get("uri", ""),
-                title=row.get("title", ""),
-                type=self._program_type(row.get("type", ""))
-            )
-            for row in results
-        ]
+        return int(await conn.scalar(query) or 0)
 
     async def get_programs(
         self,
-        source: str | None = None,
+        conn: AsyncConnection,
+        source_id: int | None = None,
         pagination: ProgramListPagination | None = None,
     ) -> ProgramList:
-        query = self._query_get_programs(source, pagination)
-        results = await sparql_query_results(query)
+        result = await conn.execute(
+            self._query_get_programs(source_id, pagination)
+        )
 
-        programs = self._parse_programs_results(results)
+        programs = [
+            ProgramModel(source=name, uri=uri, title=title, type=type_)
+            for uri, title, type_, name in result
+        ]
+
         total_count = len(programs)
-
         size = total_count
         next_cursor = None
 
         if pagination is not None:
             list_size = total_count
             size = pagination.size
-            total_count = await self._query_get_programs_total(source)
+            total_count = await self._get_programs_total(conn, source_id)
 
             if list_size > size:
                 programs = programs[:size]
                 last_program = programs[-1]
-                next_cursor = encode_cursor({
-                    "title": normalize_str(last_program.title),
-                    "uri": last_program.uri,
-                })
+                next_cursor = encode_cursor(ProgramCursor(
+                    title=last_program.title,
+                    uri=last_program.uri,
+                ))
 
         return ProgramList(
             programs=programs,

@@ -11,6 +11,8 @@ _dynaconf = Dynaconf(
 
 validators = cast(ValidatorList, _dynaconf.validators)
 validators.register(Validator("database_url", cast=str, must_exist=True))
+validators.register(Validator("db_pool_size", cast=int, default=10))
+validators.register(Validator("db_max_overflow", cast=int, default=10))
 validators.register(Validator("api_title", cast=str, must_exist=True))
 validators.register(Validator("api_version", cast=str, must_exist=True))
 validators.register(Validator("api_description", cast=str, must_exist=True))
@@ -32,6 +34,8 @@ validators.validate()
 @dataclass(frozen=True, slots=True)
 class Config:
     database_url: str
+    db_pool_size: int
+    db_max_overflow: int
     api_title: str
     api_version: str
     api_description: str

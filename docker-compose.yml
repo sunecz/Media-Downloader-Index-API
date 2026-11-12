@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     environment:
       APP_DATABASE_URL: ${APP_DATABASE_URL}
+      APP_DB_POOL_SIZE: ${APP_DB_POOL_SIZE}
+      APP_DB_MAX_OVERFLOW: ${APP_DB_MAX_OVERFLOW}
       APP_API_TITLE: ${APP_API_TITLE}
       APP_API_VERSION: ${APP_API_VERSION}
       APP_API_DESCRIPTION: ${APP_API_DESCRIPTION}

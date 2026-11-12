@@ -9,8 +9,15 @@ class CursorPagination(Struct):
     size: Annotated[int | None, Parameter(description="Page size")] = None
 
 
+class ProgramCursor(Struct):
+    """Last program of the previous page."""
+    title: str
+    uri: str
+
+
 class DecodedCursorPagination(Struct):
-    cursor: Annotated[dict, Parameter(description="JSON cursor")]
+    cursor: Annotated[ProgramCursor | None, Parameter(
+        description="Decoded cursor, None if missing or malformed")]
     size: Annotated[int, Parameter(description="Page size")]
 
 

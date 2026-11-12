@@ -13,8 +13,9 @@ from app.dependencies import (
     get_cursor_pagination,
     get_decoded_cursor_pagination,
     get_programs_service,
+    get_sources_service,
 )
-from app.client import start_client, stop_client
+from app.db import get_db_connection, start_db, stop_db
 
 logging.config.dictConfig(LOGGING_CONFIG)
 
@@ -57,12 +58,14 @@ def create_app() -> Litestar:
             WebsitesController,
         ],
         dependencies={
+            "db": Provide(get_db_connection),
             "programs_service": Provide(get_programs_service),
+            "sources_service": Provide(get_sources_service),
             "cursor_pagination": Provide(get_cursor_pagination),
             "decoded_cursor_pagination": Provide(get_decoded_cursor_pagination),
         },
-        on_startup=[start_client],
-        on_shutdown=[stop_client],
+        on_startup=[start_db],
+        on_shutdown=[stop_db],
     )
 
 

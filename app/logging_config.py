@@ -33,7 +33,7 @@ LOGGING_CONFIG = {
             'level': 'WARNING',
             'propagate': True,
         },
-        'httpx': {
+        'sqlalchemy': {
             'handlers': ['console'],
             'level': 'WARNING',
             'propagate': True,

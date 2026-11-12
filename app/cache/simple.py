@@ -10,8 +10,8 @@ from typing import Callable, Awaitable
 from urllib.parse import urlsplit
 from w3lib.url import canonicalize_url
 from app.cache import LRUCache, DiskCache
-from app.client import sparql_query_get_value
 from app.config import config
+from app.db import engine, get_dataset_version
 import logging
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ def _make_key(version: int | None, uri: str) -> str:
 
 
 async def _get_data(
-    fn: Callable[[str], Awaitable[bytes]],
+    fn: Callable[[str], Awaitable[bytes | None]],
     version: int | None,
     uri: str,
 ) -> bytes | None:
@@ -87,10 +87,12 @@ async def _get_data(
             try:
                 with access.new_file_access(key) as file:
                     if (data := file.get_data()) is None:
-                        data = await fn(uri)
-                        file.set_data(data)
+                        # None = do not cache
+                        if (data := await fn(uri)) is not None:
+                            file.set_data(data)
 
-                await _cache_lru.set(key, data)
+                if data is not None:
+                    await _cache_lru.set(key, data)
             finally:
                 access.set_data(data)
         else:
@@ -100,17 +102,8 @@ async def _get_data(
 
 
 async def _get_version() -> int | None:
-    query = f"""
-    PREFIX mdig: <https://schema.mdi.sune.app/graph#>
-
-    SELECT ?version {{
-        GRAPH <urn:x-arq:DefaultGraph#meta> {{
-            <urn:x-arq:DefaultGraph> mdig:version ?version
-        }}
-    }}
-    """
-
-    return await sparql_query_get_value(query, 'version', None)
+    async with engine.connect() as conn:
+        return await get_dataset_version(conn)
 
 
 class CacheMiddleware(ASGIMiddleware):
@@ -123,6 +116,8 @@ class CacheMiddleware(ASGIMiddleware):
         send: Send,
         next_app: ASGIApp,
     ) -> None:
+        is_sent = False
+
         try:
             uri = scope.get("raw_path") or scope["path"]
             uri = uri if isinstance(uri, str) else uri.decode()
@@ -131,36 +126,49 @@ class CacheMiddleware(ASGIMiddleware):
                 uri = f"{uri}?{scope['query_string'].decode()}"
 
             version = await _get_version()
-            is_cached = True
 
-            async def get_data(uri: str) -> bytes:
-                nonlocal is_cached
-                is_cached = False
+            async def get_data(uri: str) -> bytes | None:
+                nonlocal is_sent
+                is_sent = True
+                status_code: int | None = None
                 chunks: list[bytes] = []
 
                 async def send_wrapper(message: Message) -> None:
-                    if message["type"] == "http.response.body":
+                    nonlocal status_code
+
+                    if message["type"] == "http.response.start":
+                        status_code = message["status"]
+                    elif message["type"] == "http.response.body":
                         chunks.append(message.get("body", b""))
 
                     await send(message)
 
                 await next_app(scope, receive, send_wrapper)
-                return b"".join(chunks)
+
+                # Hits are replayed as 200
+                return b"".join(chunks) if status_code == 200 else None
 
             data = await _get_data(get_data, version, uri)
 
-            if not is_cached:
+            if is_sent:
                 return  # Bytes already sent
+
+            if data is None:
+                # The awaited response was not cacheable
+                await next_app(scope, receive, send)
+                return
 
             response = ASGIResponse(
                 status_code=200,
                 headers={
                     "Content-Type": "application/json",
                 },
-                body=data or b"",
+                body=data,
             )
 
             await response(scope, receive, send)
         except Exception as e:
             logger.exception(e)
-            await next_app(scope, receive, send)
+
+            if not is_sent:
+                await next_app(scope, receive, send)

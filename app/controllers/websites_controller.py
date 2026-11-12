@@ -2,15 +2,13 @@ import logging
 from litestar import Controller, get
 from litestar.exceptions import HTTPException
 from litestar.status_codes import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
+from sqlalchemy.ext.asyncio import AsyncConnection
 from app.cache import CacheMiddleware
 from app.models import ProgramList, DecodedCursorPagination
-from app.services import ProgramsService
+from app.services import ProgramsService, SourcesService
 from app.services.programs_service import ProgramListPagination
-from app.utils import normalize_str
 
 logger = logging.getLogger(__name__)
-
-SUPPORTED_WEBSITES = ["iprima"]
 
 
 class WebsitesController(Controller):
@@ -24,8 +22,18 @@ class WebsitesController(Controller):
     )
     async def get_all_websites(
         self,
+        db: AsyncConnection,
+        sources_service: SourcesService,
     ) -> list[str]:
-        return SUPPORTED_WEBSITES
+        try:
+            return await sources_service.list_names(db)
+        except Exception as e:
+            logger.exception(e)
+
+            raise HTTPException(
+                detail="Internal server error: An unexpected error occurred",
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @get(
         path="/{website:str}/programs",
@@ -36,26 +44,31 @@ class WebsitesController(Controller):
     async def get_programs_by_website(
         self,
         website: str,
+        db: AsyncConnection,
         programs_service: ProgramsService,
+        sources_service: SourcesService,
         decoded_cursor_pagination: DecodedCursorPagination,
     ) -> ProgramList:
         try:
-            if not website or website not in SUPPORTED_WEBSITES:
+            source_id = await sources_service.resolve_id(db, website)
+
+            if source_id is None:
+                websites = await sources_service.list_names(db)
                 raise HTTPException(
-                    detail=f"Invalid website parameter. Website must be one of: {', '.join(SUPPORTED_WEBSITES)}",
+                    detail=f"Invalid website parameter. Website must be one of: {', '.join(websites)}",
                     status_code=HTTP_400_BAD_REQUEST
                 )
 
             return await programs_service.get_programs(
-                source=website,
+                db,
+                source_id=source_id,
                 pagination=ProgramListPagination(
                     size=decoded_cursor_pagination.size,
-                    after_title=normalize_str(
-                        decoded_cursor_pagination.cursor.get("title")
-                    ),
-                    after_uri=decoded_cursor_pagination.cursor.get("uri"),
+                    after=decoded_cursor_pagination.cursor,
                 ),
             )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.exception(e)
 

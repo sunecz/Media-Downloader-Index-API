@@ -5,7 +5,7 @@ Simple Python REST API for [Media Downloader Index](https://github.com/sunecz/Me
 You can use the `run.sh` script to run the application. However, it requires a little bit of setup first.
 
 ### Docker network
-The Docker container is running in an external Docker network `net-mdi`. This network is used by the Media Downloader Index containers. First, create it (if not already) by running:
+The Docker container is running in an external Docker network `net-mdi`. This network is used by the Media Downloader Index containers, the API connects to the indexer's PostgreSQL container `mdi-db` through it. First, create it (if not already) by running:
 
 	docker network create net-mdi
 
@@ -13,7 +13,9 @@ The Docker container is running in an external Docker network `net-mdi`. This ne
 ### Environment variables
 The script requires a `.envrc` file with the following environment variables:
 
-	export APP_DATABASE_URL="http://mdi-db:3030/mdi" # DB URI used by the API
+	export APP_DATABASE_URL="postgresql+asyncpg://mdi:password@mdi-db:5432/mdi" # SQLAlchemy URL of the indexer's PostgreSQL database (use localhost:$POSTGRES_PORT when running locally)
+	export APP_DB_POOL_SIZE=10                 # Number of pooled database connections
+	export APP_DB_MAX_OVERFLOW=10              # Extra connections allowed above the pool size under load
 
 	export APP_API_TITLE="MDI API"             # API title in Swagger UI
 	export APP_API_VERSION="0.0.1"             # API version in Swagger UI

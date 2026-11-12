@@ -2,11 +2,11 @@ import logging
 from litestar import Controller, get
 from litestar.exceptions import HTTPException
 from litestar.status_codes import HTTP_500_INTERNAL_SERVER_ERROR
+from sqlalchemy.ext.asyncio import AsyncConnection
 from app.models import ProgramList, DecodedCursorPagination
 from app.services import ProgramsService
 from app.services.programs_service import ProgramListPagination
 from app.cache import CacheMiddleware
-from app.utils import normalize_str
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +23,17 @@ class ProgramsController(Controller):
     )
     async def get_programs(
         self,
+        db: AsyncConnection,
         programs_service: ProgramsService,
         decoded_cursor_pagination: DecodedCursorPagination,
     ) -> ProgramList:
         try:
             return await programs_service.get_programs(
-                source=None,
+                db,
+                source_id=None,
                 pagination=ProgramListPagination(
                     size=decoded_cursor_pagination.size,
-                    after_title=normalize_str(
-                        decoded_cursor_pagination.cursor.get("title")
-                    ),
-                    after_uri=decoded_cursor_pagination.cursor.get("uri"),
+                    after=decoded_cursor_pagination.cursor,
                 ),
             )
         except Exception as e:
