@@ -1,56 +1,41 @@
-from dataclasses import dataclass
-from typing import cast
-from dynaconf import Dynaconf, Validator
-from dynaconf.validator import ValidatorList
+import os
+from typing import Annotated
+import msgspec
+from msgspec import Meta, Struct
 
-_dynaconf = Dynaconf(
-    envvar_prefix="APP",
-    load_dotenv=False,
-    settings_files=[],  # Use ENV vars only
-)
-
-validators = cast(ValidatorList, _dynaconf.validators)
-validators.register(Validator("database_url", cast=str, must_exist=True))
-validators.register(Validator("db_pool_size", cast=int, default=10))
-validators.register(Validator("db_max_overflow", cast=int, default=10))
-validators.register(Validator("api_title", cast=str, must_exist=True))
-validators.register(Validator("api_version", cast=str, must_exist=True))
-validators.register(Validator("api_description", cast=str, must_exist=True))
-validators.register(Validator("base_path", cast=str, must_exist=True))
-validators.register(Validator("default_page_size", cast=int, default=10))
-validators.register(Validator("max_page_size", cast=int, default=100))
-validators.register(Validator("cache_dir", cast=str, must_exist=True))
-validators.register(Validator("cache_hot_max_size", cast=int, default=1000))
-validators.register(
-    Validator("cache_disk_max_size", cast=int, default=10 * 1024 * 1024 * 1024)
-)
-validators.register(
-    Validator("cache_file_max_size", cast=int, default=50 * 1024 * 1024)
-)
-validators.register(Validator("cache_max_concurrency", cast=int, default=8))
-validators.register(
-    Validator("cache_disk_evict_target", cast=float, default=0.7, gt=0, lt=1)
-)
-validators.validate()
+_ENV_PREFIX = "APP_"
 
 
-@dataclass(frozen=True, slots=True)
-class Config:
+class Config(Struct, frozen=True, kw_only=True):
     database_url: str
-    db_pool_size: int
-    db_max_overflow: int
+    db_pool_size: int = 10
+    db_max_overflow: int = 10
     api_title: str
     api_version: str
     api_description: str
     base_path: str
-    default_page_size: int
-    max_page_size: int
+    default_page_size: int = 10
+    max_page_size: int = 100
     cache_dir: str
-    cache_hot_max_size: int
-    cache_disk_max_size: int
-    cache_file_max_size: int
-    cache_max_concurrency: int
-    cache_disk_evict_target: float
+    cache_hot_max_size: int = 1000
+    cache_disk_max_size: int = 10 * 1024 * 1024 * 1024
+    cache_file_max_size: int = 50 * 1024 * 1024
+    cache_max_concurrency: int = 8
+    cache_disk_evict_target: Annotated[float, Meta(gt=0, lt=1)] = 0.7
 
 
-config = cast(Config, _dynaconf)
+def _load() -> Config:
+    env = {
+        name.removeprefix(_ENV_PREFIX).lower(): value
+        for name, value in os.environ.items()
+        if name.startswith(_ENV_PREFIX)
+    }
+
+    try:
+        # strict=False converts the strings to int and float
+        return msgspec.convert(env, Config, strict=False)
+    except msgspec.ValidationError as e:
+        raise RuntimeError(f"Invalid configuration: {e}") from None
+
+
+config = _load()

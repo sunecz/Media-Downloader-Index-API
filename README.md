@@ -1,6 +1,13 @@
 # Media Downloader Index API
 Simple Python REST API for [Media Downloader Index](https://github.com/sunecz/Media-Downloader-Index).
 
+## Development
+Dependencies are managed by [uv](https://docs.astral.sh/uv/) (`pyproject.toml`, locked in `uv.lock`):
+
+	uv sync          # create .venv with the locked dependencies
+	uv run pyright   # type check
+	uv lock --upgrade-package <name>  # update a dependency
+
 ## Running the application
 You can use the `run.sh` script to run the application. However, it requires a little bit of setup first.
 
