@@ -8,6 +8,14 @@ Dependencies are managed by [uv](https://docs.astral.sh/uv/) (`pyproject.toml`, 
 	uv run pyright   # type check
 	uv lock --upgrade-package <name>  # update a dependency
 
+### Database models
+`app/db/models.py` is generated from the indexer's Flyway migrations and committed. The script downloads the migrations of the indexer commit pinned in `INDEXER_REF`, applies them to a temporary PostgreSQL container and runs [sqlacodegen](https://github.com/agronholm/sqlacodegen) (requires Docker):
+
+	scripts/generate-models.sh                      # migrations of INDEXER_REF from GitHub
+	scripts/generate-models.sh --migrations <dir>   # local migrations, e.g. not pushed yet
+
+Bump `INDEXER_REF` when the API needs a newer schema, and add tables the API starts using to `TABLES`.
+
 ## Running the application
 You can use the `run.sh` script to run the application. However, it requires a little bit of setup first.
 

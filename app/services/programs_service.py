@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import logging
 from sqlalchemy import Select, Text, bindparam, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncConnection
-from app.db.models import Program, Source
+from app.db.models import Program, ProgramAvailability, Source
 from app.models import (
     CursorPaginationResult,
     Program as ProgramModel,
@@ -20,8 +20,11 @@ class ProgramListPagination:
     after: ProgramCursor | None = None
 
 
-# Titled only, pagination orders by title
-_listed = (Program.active.is_(True), Program.title.is_not(None))
+_listed = (
+    Program.active,  # Plain column: IS TRUE would not match the partial indexes
+    Program.title.is_not(None),
+    Program.availability == ProgramAvailability.VOD,
+)
 
 
 class ProgramsService:

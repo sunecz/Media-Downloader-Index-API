@@ -17,8 +17,8 @@ class ProgramsController(Controller):
 
     @get(
         path="/",
-        description="Get all programs",
-        summary="Get all programs",
+        description="Get active programs available on demand, from all websites",
+        summary="Get available programs",
         middleware=[CacheMiddleware()],
     )
     async def get_programs(

@@ -37,8 +37,8 @@ class WebsitesController(Controller):
 
     @get(
         path="/{website:str}/programs",
-        description="Get programs by website",
-        summary="Get programs by website",
+        description="Get active programs available on demand, from the given website",
+        summary="Get available programs by website",
         middleware=[CacheMiddleware()],
     )
     async def get_programs_by_website(

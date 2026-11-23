@@ -76,8 +76,13 @@ def _normalize_uri(uri: str) -> str:
     return f"{parts.path}?{parts.query}" if parts.query else parts.path
 
 
+# Bump when the response of a URI changes for the same dataset version
+_KEY_FORMAT = 2
+
+
 def _make_key(version: int | None, uri: str) -> str:
     material = msgspec.json.encode({
+        "format": _KEY_FORMAT,
         "uri": _normalize_uri(uri),
         "version": "" if version is None else version,
     })
